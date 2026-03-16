@@ -1,0 +1,115 @@
+/* Sits inline next to LinkedIn's own Save button — artdeco classes handle base style */
+.jt-track-btn {
+  margin-left: 8px;
+}
+
+#jt-panel {
+  position: fixed;
+  bottom: 72px;
+  right: 24px;
+  z-index: 99999;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  width: 320px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+.jt-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #0a66c2;
+  color: #fff;
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.jt-panel__close {
+  background: none;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.8;
+}
+
+.jt-panel__close:hover { opacity: 1; }
+
+.jt-panel__row {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 14px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.jt-panel__label {
+  font-size: 11px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.jt-panel__value {
+  color: #1a1a1a;
+  word-break: break-word;
+}
+
+.jt-panel__link {
+  color: #0a66c2;
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.jt-panel__actions {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+}
+
+.jt-btn {
+  flex: 1;
+  padding: 7px 0;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid #0a66c2;
+  color: #0a66c2;
+  background: #fff;
+  transition: background 0.15s, color 0.15s;
+}
+
+.jt-btn:hover {
+  background: #0a66c2;
+  color: #fff;
+}
+
+.jt-toast {
+  position: fixed;
+  bottom: 90px;
+  right: 24px;
+  z-index: 100000;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  animation: jt-fadein 0.2s ease;
+}
+
+.jt-toast--success { background: #057642; color: #fff; }
+.jt-toast--error   { background: #c0392b; color: #fff; }
+
+@keyframes jt-fadein {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
