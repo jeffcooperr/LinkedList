@@ -2,11 +2,21 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
+import logging
+
 import models
 import schemas
 from database import Base, engine, get_db
+from sheets import append_job, ensure_header_row
+
+logger = logging.getLogger(__name__)
 
 Base.metadata.create_all(bind=engine)
+
+try:
+    ensure_header_row()
+except Exception as exc:
+    logger.warning("Could not reach Google Sheets on startup: %s", exc)
 
 app = FastAPI(title="Job Tracker API")
 
@@ -35,4 +45,10 @@ def create_job(job: schemas.JobCreate, db: Session = Depends(get_db)):
     db.add(db_job)
     db.commit()
     db.refresh(db_job)
+
+    try:
+        append_job(db_job)
+    except Exception as exc:
+        logger.warning("Sheets sync failed: %s", exc)
+
     return db_job

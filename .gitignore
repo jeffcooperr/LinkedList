@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+*.db
+
+# Secrets
+credentials.json
+
+# Claude
+.claude/

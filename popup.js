@@ -1,44 +1,51 @@
-// Popup reads jobs stored by the content script via localStorage on the LinkedIn tab.
-// We inject a script into the active tab to pull the data out.
-
-async function getJobs() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id || !tab.url?.includes('linkedin.com')) return [];
-
-  const results = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    func: () => JSON.parse(localStorage.getItem('jt-jobs') || '[]'),
+function getToken(interactive) {
+  return new Promise((resolve, reject) => {
+    chrome.identity.getAuthToken({ interactive }, (token) => {
+      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+      else resolve(token);
+    });
   });
-  return results?.[0]?.result || [];
 }
 
-async function saveJobs(jobs) {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) return;
-  await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    func: (data) => localStorage.setItem('jt-jobs', JSON.stringify(data)),
-    args: [jobs],
+async function fetchUserInfo(token) {
+  const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: { Authorization: `Bearer ${token}` },
   });
+  return res.json();
 }
 
 function formatDate(iso) {
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function download(filename, content, mime) {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+function esc(str = '') {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+
+// ── Screens ──────────────────────────────────────────────────────────────────
+
+function showAuthScreen() {
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('main-screen').style.display = 'none';
+}
+
+async function showMainScreen() {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('main-screen').style.display = 'block';
+
+  const { userInfo } = await chrome.storage.local.get('userInfo');
+  if (userInfo?.email) {
+    document.getElementById('user-email').textContent = userInfo.email;
+  }
+
+  const { jobs = [] } = await chrome.storage.local.get('jobs');
+  renderJobs(jobs);
+}
+
+// ── Job list ─────────────────────────────────────────────────────────────────
 
 function renderJobs(jobs) {
-  const listEl = document.getElementById('job-list');
+  const listEl  = document.getElementById('job-list');
   const emptyEl = document.getElementById('empty');
   const countEl = document.getElementById('job-count');
 
@@ -52,7 +59,7 @@ function renderJobs(jobs) {
 
   emptyEl.style.display = 'none';
   listEl.innerHTML = jobs.map((job, i) => `
-    <div class="job-card" data-index="${i}">
+    <div class="job-card">
       <div class="job-title">${esc(job.title) || 'Untitled'}</div>
       <div class="job-meta">${esc(job.company)}${job.company && job.location ? ' · ' : ''}${esc(job.location)}</div>
       <div class="job-link"><a href="${esc(job.link)}" target="_blank">${esc(job.link)}</a></div>
@@ -64,39 +71,56 @@ function renderJobs(jobs) {
   listEl.querySelectorAll('.remove-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const idx = parseInt(e.currentTarget.dataset.index, 10);
-      const current = await getJobs();
+      const { jobs: current = [] } = await chrome.storage.local.get('jobs');
       current.splice(idx, 1);
-      await saveJobs(current);
+      await chrome.storage.local.set({ jobs: current });
       renderJobs(current);
     });
   });
 }
 
-function esc(str = '') {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+// ── Auth actions ──────────────────────────────────────────────────────────────
 
-document.getElementById('export-json-btn').addEventListener('click', async () => {
-  const jobs = await getJobs();
-  download('jobs.json', JSON.stringify(jobs, null, 2), 'application/json');
+document.getElementById('signin-btn').addEventListener('click', async () => {
+  const errorEl = document.getElementById('auth-error');
+  errorEl.textContent = '';
+  try {
+    const token = await getToken(true);
+    const userInfo = await fetchUserInfo(token);
+    await chrome.storage.local.set({ userInfo });
+    showMainScreen();
+  } catch (err) {
+    errorEl.textContent = 'Sign in failed — please try again.';
+  }
 });
 
-document.getElementById('export-csv-btn').addEventListener('click', async () => {
-  const jobs = await getJobs();
-  const header = 'Title,Company,Location,Link,Saved At';
-  const rows = jobs.map(j =>
-    [j.title, j.company, j.location, j.link, j.savedAt]
-      .map(v => `"${(v || '').replace(/"/g, '""')}"`)
-      .join(',')
-  );
-  download('jobs.csv', [header, ...rows].join('\n'), 'text/csv');
+document.getElementById('signout-btn').addEventListener('click', async () => {
+  try {
+    const token = await getToken(false);
+    chrome.identity.removeCachedAuthToken({ token });
+    fetch(`https://oauth2.googleapis.com/revoke?token=${token}`, { method: 'POST' });
+  } catch {}
+  await chrome.storage.local.clear();
+  showAuthScreen();
 });
 
-document.getElementById('clear-btn').addEventListener('click', async () => {
-  if (!confirm('Remove all tracked jobs?')) return;
-  await saveJobs([]);
-  renderJobs([]);
+// ── Toolbar actions ───────────────────────────────────────────────────────────
+
+document.getElementById('open-sheet-btn').addEventListener('click', async () => {
+  const { spreadsheetId } = await chrome.storage.local.get('spreadsheetId');
+  if (spreadsheetId) {
+    chrome.tabs.create({ url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}` });
+  }
 });
 
-// Initial load
-getJobs().then(renderJobs);
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+(async () => {
+  try {
+    await getToken(false);
+    showMainScreen();
+  } catch {
+    showAuthScreen();
+  }
+})();

@@ -4,10 +4,8 @@
   // --- Helpers ---
 
   function getJobId() {
-    // Search page: ?currentJobId=xxx
     const param = new URLSearchParams(window.location.search).get('currentJobId');
     if (param) return param;
-    // Direct view page: /jobs/view/1234567/
     const match = window.location.pathname.match(/\/jobs\/view\/(\d+)/);
     return match ? match[1] : null;
   }
@@ -32,20 +30,11 @@
       document.querySelector('.job-details-jobs-unified-top-card__primary-description-container .tvm__text')?.innerText.trim() ||
       '';
 
-    // Always use the canonical /jobs/view/ URL
     const link = jobId
       ? `https://www.linkedin.com/jobs/view/${jobId}/`
       : window.location.href;
 
     return { title, company, location, link };
-  }
-
-  function escapeHtml(str = '') {
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
-  function csvEscape(str = '') {
-    return str.replace(/"/g, '""');
   }
 
   // --- UI ---
@@ -61,53 +50,16 @@
     setTimeout(() => toast.remove(), 3000);
   }
 
-  function showPanel(data) {
-    const existing = document.getElementById('jt-panel');
-    if (existing) existing.remove();
-
-    const panel = document.createElement('div');
-    panel.id = 'jt-panel';
-    panel.innerHTML = `
-      <div class="jt-panel__header">
-        <span>Job Captured</span>
-        <button class="jt-panel__close" id="jt-panel-close">✕</button>
-      </div>
-      <div class="jt-panel__row"><span class="jt-panel__label">Title</span><span class="jt-panel__value">${escapeHtml(data.title) || '—'}</span></div>
-      <div class="jt-panel__row"><span class="jt-panel__label">Company</span><span class="jt-panel__value">${escapeHtml(data.company) || '—'}</span></div>
-      <div class="jt-panel__row"><span class="jt-panel__label">Location</span><span class="jt-panel__value">${escapeHtml(data.location) || '—'}</span></div>
-      <div class="jt-panel__row"><span class="jt-panel__label">Link</span><span class="jt-panel__value jt-panel__link">${escapeHtml(data.link)}</span></div>
-      <div class="jt-panel__actions">
-        <button class="jt-btn" id="jt-copy-btn">Copy JSON</button>
-        <button class="jt-btn" id="jt-copy-csv-btn">Copy CSV</button>
-      </div>
-    `;
-    document.body.appendChild(panel);
-
-    document.getElementById('jt-panel-close').addEventListener('click', () => panel.remove());
-    document.getElementById('jt-copy-btn').addEventListener('click', () => {
-      navigator.clipboard.writeText(JSON.stringify(data, null, 2))
-        .then(() => showToast('Copied as JSON'))
-        .catch(() => showToast('Copy failed', true));
-    });
-    document.getElementById('jt-copy-csv-btn').addEventListener('click', () => {
-      const csv = `"${csvEscape(data.title)}","${csvEscape(data.company)}","${csvEscape(data.location)}","${csvEscape(data.link)}"`;
-      navigator.clipboard.writeText(csv)
-        .then(() => showToast('Copied as CSV'))
-        .catch(() => showToast('Copy failed', true));
-    });
-  }
-
   // --- Button injection ---
 
   function injectButton(saveBtn) {
     const btn = document.createElement('button');
     btn.id = BTN_ID;
     btn.type = 'button';
-    // Reuse LinkedIn's own artdeco classes so sizing/spacing matches naturally
     btn.className = 'artdeco-button artdeco-button--primary artdeco-button--3 jt-track-btn';
     btn.innerHTML = `<span aria-hidden="true">Track Job</span>`;
 
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', () => {
       const data = extractJobData();
       if (!data.title && !data.company) {
         showToast('Could not extract job details — try scrolling down first', true);
@@ -116,32 +68,15 @@
 
       const payload = { ...data, date_saved: new Date().toISOString() };
 
-      try {
-        const res = await fetch('http://localhost:8000/jobs', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-
-        if (res.status === 201) {
-          showPanel(data);
-          showToast('Job saved to tracker');
-        } else if (res.status === 409) {
-          showToast('Already tracked', true);
-          return;
+      chrome.runtime.sendMessage({ type: 'TRACK_JOB', payload }, (response) => {
+        if (response?.ok) {
+          showToast('Saved to LinkedList');
+        } else if (response?.error === 'not_signed_in') {
+          showToast('Sign in via the LinkedList popup first', true);
         } else {
-          throw new Error(`Unexpected status ${res.status}`);
+          showToast('Failed to save — try again', true);
         }
-      } catch (err) {
-        showPanel(data);
-        showToast('API unavailable — saved locally only', true);
-      }
-
-      const saved = JSON.parse(localStorage.getItem('jt-jobs') || '[]');
-      if (!saved.find(j => j.link === data.link)) {
-        saved.unshift({ ...data, savedAt: payload.date_saved });
-        localStorage.setItem('jt-jobs', JSON.stringify(saved));
-      }
+      });
     });
 
     saveBtn.insertAdjacentElement('afterend', btn);
@@ -161,7 +96,6 @@
     const ourBtn  = document.getElementById(BTN_ID);
     const jobId   = getJobId();
 
-    // Job changed — remove stale button so we re-inject fresh
     if (ourBtn && jobId !== lastJobId) {
       ourBtn.remove();
     }
@@ -177,7 +111,6 @@
   const observer = new MutationObserver(syncButton);
   observer.observe(document.body, { childList: true, subtree: true });
 
-  // Poll for URL changes (popstate isn't reliable for pushState SPAs)
   setInterval(() => {
     if (getJobId() !== lastJobId) syncButton();
   }, 500);
