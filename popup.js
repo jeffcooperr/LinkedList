@@ -38,8 +38,13 @@ async function showMainScreen() {
     document.getElementById('user-email').textContent = userInfo.email;
   }
 
-  const { jobs = [] } = await chrome.storage.local.get('jobs');
+  const { jobs = [], spreadsheetId, gmailEnabled, emailEvents = [] } = await chrome.storage.local.get(['jobs', 'spreadsheetId', 'gmailEnabled', 'emailEvents']);
+
+  const openBtn = document.getElementById('open-sheet-btn');
+  if (spreadsheetId) { openBtn.disabled = false; openBtn.title = ''; }
+
   renderJobs(jobs);
+  renderEmailEvents(emailEvents, gmailEnabled);
 }
 
 // ── Job list ─────────────────────────────────────────────────────────────────
@@ -78,6 +83,56 @@ function renderJobs(jobs) {
     });
   });
 }
+
+// ── Email events ─────────────────────────────────────────────────────────────
+
+function renderEmailEvents(events, gmailEnabled) {
+  const listEl   = document.getElementById('email-list');
+  const emptyEl  = document.getElementById('email-empty');
+  const enableBtn = document.getElementById('enable-gmail-btn');
+
+  if (!gmailEnabled) {
+    enableBtn.style.display = 'block';
+    listEl.innerHTML = '';
+    emptyEl.style.display = 'none';
+    return;
+  }
+
+  enableBtn.style.display = 'none';
+
+  if (!events.length) {
+    emptyEl.style.display = 'block';
+    listEl.innerHTML = '';
+    return;
+  }
+
+  emptyEl.style.display = 'none';
+  listEl.innerHTML = events.map(e => `
+    <div class="email-card">
+      <span class="status-badge status-badge--${esc(e.status)}">${esc(e.status)}</span>
+      <div class="email-body">
+        <div class="email-company">${esc(e.company)}</div>
+        <div class="email-subject">${esc(e.subject)}</div>
+        <div class="email-time">${formatDate(e.receivedAt)}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+document.getElementById('enable-gmail-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('enable-gmail-btn');
+  btn.textContent = 'Authorizing…';
+  try {
+    // Remove cached token so Chrome prompts for the new Gmail scope
+    await new Promise(r => chrome.identity.clearAllCachedAuthTokens(r));
+    await getToken(true); // re-auth with all scopes including Gmail
+    await chrome.storage.local.set({ gmailEnabled: true });
+    const { emailEvents = [] } = await chrome.storage.local.get('emailEvents');
+    renderEmailEvents(emailEvents, true);
+  } catch {
+    btn.textContent = 'Enable';
+  }
+});
 
 // ── Auth actions ──────────────────────────────────────────────────────────────
 

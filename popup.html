@@ -20,18 +20,8 @@
       padding: 48px 32px 40px;
       gap: 12px;
     }
-    .brand-name {
-      font-size: 26px;
-      font-weight: 800;
-      color: #0a66c2;
-      letter-spacing: -0.5px;
-    }
-    .brand-tagline {
-      font-size: 13px;
-      color: #666;
-      text-align: center;
-      margin-bottom: 12px;
-    }
+    .brand-name { font-size: 26px; font-weight: 800; color: #0a66c2; letter-spacing: -0.5px; }
+    .brand-tagline { font-size: 13px; color: #666; text-align: center; margin-bottom: 12px; }
     #signin-btn {
       display: flex;
       align-items: center;
@@ -47,13 +37,7 @@
       transition: box-shadow 0.15s;
     }
     #signin-btn:hover { box-shadow: 0 1px 6px rgba(0,0,0,0.15); }
-    #signin-btn svg { flex-shrink: 0; }
-    #auth-error {
-      font-size: 12px;
-      color: #c0392b;
-      min-height: 16px;
-      text-align: center;
-    }
+    #auth-error { font-size: 12px; color: #c0392b; min-height: 16px; text-align: center; }
 
     /* ── Main screen ── */
     #main-screen { display: none; }
@@ -110,6 +94,8 @@
       background: #fff;
     }
     .toolbar-btn:hover { background: #0a66c2; color: #fff; }
+    .toolbar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .toolbar-btn:disabled:hover { background: #fff; color: #0a66c2; }
     #empty {
       padding: 32px 16px;
       text-align: center;
@@ -117,7 +103,7 @@
       display: none;
     }
     #empty p { margin-top: 6px; font-size: 12px; }
-    #job-list { max-height: 380px; overflow-y: auto; }
+    #job-list { max-height: 300px; overflow-y: auto; }
     .job-card {
       padding: 10px 16px;
       border-bottom: 1px solid #f0f0f0;
@@ -126,12 +112,7 @@
     .job-card:hover { background: #f9f9f9; }
     .job-title { font-weight: 600; font-size: 13px; margin-bottom: 2px; padding-right: 20px; }
     .job-meta { color: #555; font-size: 12px; margin-bottom: 4px; }
-    .job-link a {
-      color: #0a66c2;
-      font-size: 11px;
-      text-decoration: none;
-      word-break: break-all;
-    }
+    .job-link a { color: #0a66c2; font-size: 11px; text-decoration: none; word-break: break-all; }
     .job-link a:hover { text-decoration: underline; }
     .job-date { color: #aaa; font-size: 11px; margin-top: 3px; }
     .remove-btn {
@@ -146,6 +127,57 @@
       line-height: 1;
     }
     .remove-btn:hover { color: #c0392b; }
+
+    /* ── Email section ── */
+    #email-section { border-top: 2px solid #f0f0f0; }
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 16px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #888;
+      background: #fafafa;
+    }
+    #enable-gmail-btn {
+      font-size: 11px;
+      font-weight: 600;
+      color: #6366f1;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+    }
+    #enable-gmail-btn:hover { text-decoration: underline; }
+    #email-list { max-height: 200px; overflow-y: auto; }
+    .email-card {
+      padding: 8px 16px;
+      border-bottom: 1px solid #f0f0f0;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .email-card:hover { background: #f9f9f9; }
+    .status-badge {
+      flex-shrink: 0;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 10px;
+      margin-top: 1px;
+    }
+    .status-badge--Applied      { background: #e8f0fe; color: #1a73e8; }
+    .status-badge--Interviewing { background: #fef9e7; color: #c07800; }
+    .status-badge--Offer        { background: #e6f4ea; color: #1e8e3e; }
+    .status-badge--Rejected     { background: #fce8e6; color: #d93025; }
+    .email-body { flex: 1; min-width: 0; }
+    .email-company { font-weight: 600; font-size: 12px; }
+    .email-subject { font-size: 11px; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .email-time { font-size: 10px; color: #aaa; margin-top: 2px; }
+    #email-empty { padding: 16px; text-align: center; color: #aaa; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -177,13 +209,23 @@
       <button id="signout-btn">Sign out</button>
     </div>
     <div id="toolbar">
-      <button class="toolbar-btn" id="open-sheet-btn">Open Sheet</button>
+      <button class="toolbar-btn" id="open-sheet-btn" disabled title="Track a job first to create your sheet">Open Sheet</button>
     </div>
     <div id="empty">
       <strong>No jobs tracked yet</strong>
-      <p>Navigate to a LinkedIn job page and click <em>Track Job</em>.</p>
+      <p>Navigate to a LinkedIn job page and click <em>Track</em>.</p>
     </div>
     <div id="job-list"></div>
+
+    <!-- Email activity -->
+    <div id="email-section">
+      <div class="section-header">
+        <span>Email Activity</span>
+        <button id="enable-gmail-btn" style="display:none">Enable</button>
+      </div>
+      <div id="email-list"></div>
+      <div id="email-empty" style="display:none">No job emails detected yet.</div>
+    </div>
   </div>
 
   <script src="popup.js"></script>

@@ -57,9 +57,18 @@
     btn.id = BTN_ID;
     btn.type = 'button';
     btn.className = 'artdeco-button artdeco-button--primary artdeco-button--3 jt-track-btn';
-    btn.innerHTML = `<span aria-hidden="true">Track Job</span>`;
+    btn.innerHTML = `
+      <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px;vertical-align:middle;flex-shrink:0">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/>
+      </svg>
+      <span aria-hidden="true" style="vertical-align:middle">Track</span>
+    `;
 
     btn.addEventListener('click', () => {
+      if (!isContextValid()) {
+        showToast('Please refresh the page to reconnect LinkedList', true);
+        return;
+      }
       const data = extractJobData();
       if (!data.title && !data.company) {
         showToast('Could not extract job details — try scrolling down first', true);
@@ -70,7 +79,7 @@
 
       chrome.runtime.sendMessage({ type: 'TRACK_JOB', payload }, (response) => {
         if (response?.ok) {
-          showToast('Saved to LinkedList');
+          showToast('Tracked in LinkedList');
         } else if (response?.error === 'not_signed_in') {
           showToast('Sign in via the LinkedList popup first', true);
         } else {
@@ -88,6 +97,10 @@
   //   1. MutationObserver – catches the Save button being added/removed in the DOM
   //   2. URL polling – catches the currentJobId changing so we reset the button
   //      even when React reuses the same DOM node for the save button
+
+  function isContextValid() {
+    try { return !!chrome.runtime?.id; } catch { return false; }
+  }
 
   let lastJobId = null;
 
@@ -111,9 +124,16 @@
   const observer = new MutationObserver(syncButton);
   observer.observe(document.body, { childList: true, subtree: true });
 
-  setInterval(() => {
-    if (getJobId() !== lastJobId) syncButton();
-  }, 500);
+  window.addEventListener('popstate', syncButton);
+
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === 'SYNC_BUTTON') {
+      syncButton();
+      setTimeout(syncButton, 500);
+    }
+  });
+
+  const poll = setInterval(syncButton, 500);
 
   syncButton();
 })();
