@@ -88,7 +88,10 @@
         const payload = { ...data, date_saved: new Date().toISOString() };
 
         chrome.runtime.sendMessage({ type: 'TRACK_JOB', payload }, (response) => {
-          if (response?.ok) {
+          if (response?.ok && response?.duplicate) {
+            setTracked(btn);
+            showToast('Already tracked in LinkedList');
+          } else if (response?.ok) {
             setTracked(btn);
             showToast('Tracked in LinkedList');
           } else if (response?.error === 'not_signed_in') {
