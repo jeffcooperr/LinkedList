@@ -169,6 +169,13 @@ document.getElementById('open-sheet-btn').addEventListener('click', async () => 
 });
 
 
+// ── Live updates ─────────────────────────────────────────────────────────────
+
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.jobs)        renderJobs(changes.jobs.newValue || []);
+  if (changes.emailEvents) renderEmailEvents(changes.emailEvents.newValue || [], true);
+});
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 (async () => {
