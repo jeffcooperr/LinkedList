@@ -268,6 +268,7 @@ async function checkGmail(token) {
     const headers = msg.payload?.headers || [];
     const subject = headers.find(h => h.name === 'Subject')?.value || '';
     const from    = headers.find(h => h.name === 'From')?.value    || '';
+    if (/jobalerts-noreply@linkedin\.com/i.test(from)) continue;
     const result = await classifyEmail(subject, msg.snippet || '');
     if (!result) continue;
     const { status, company: aiCompany } = result;
