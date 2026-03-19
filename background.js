@@ -316,12 +316,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     try {
       const token = await getToken(false);
 
-      const { jobs = [] } = await chrome.storage.local.get('jobs');
-      if (jobs.find(j => j.link === message.payload.link)) {
-        sendResponse({ ok: true, duplicate: true });
-        return;
-      }
-
       const stored = await chrome.storage.local.get('spreadsheetId');
       let { spreadsheetId } = stored;
       if (!spreadsheetId) {
@@ -331,8 +325,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       await appendRow(token, spreadsheetId, message.payload);
 
-      jobs.unshift({ ...message.payload, savedAt: message.payload.date_saved });
-      await chrome.storage.local.set({ jobs });
+      const { jobs = [] } = await chrome.storage.local.get('jobs');
+      if (!jobs.find(j => j.link === message.payload.link)) {
+        jobs.unshift({ ...message.payload, savedAt: message.payload.date_saved });
+        await chrome.storage.local.set({ jobs });
+      }
 
       sendResponse({ ok: true });
     } catch (err) {
