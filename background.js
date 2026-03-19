@@ -157,13 +157,28 @@ async function appendRow(token, spreadsheetId, job) {
 
 // ── Email classification ──────────────────────────────────────────────────────
 
-function classifyEmail(subject, snippet) {
-  const t = (subject + ' ' + snippet).toLowerCase();
-  if (/sent/i.test(t))     return 'Applied';
-  if (/interview/i.test(t)) return 'Interviewing';
-  if (/offer/i.test(t))       return 'Offer';
-  if (/reject/i.test(t))    return 'Rejected';
-  return null;
+const VALID_STATUSES = ['Applied', 'Interviewing', 'Phone Screen', 'Offer', 'Rejected'];
+
+const CLASSIFY_URL = 'https://linkedlist-proxy.vercel.app/api/classify';
+
+async function classifyEmail(subject, snippet) {
+  try {
+    const res = await fetch(CLASSIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subject, snippet }),
+    });
+    if (!res.ok) { console.log('[classify] HTTP error', res.status); return null; }
+    const { text } = await res.json();
+    console.log('[classify] subject:', subject, '| gemini raw:', JSON.stringify(text));
+    if (!text || text === 'null') return null;
+    const [status, ...rest] = text.split('|');
+    const company = rest.join('|').trim();
+    return VALID_STATUSES.includes(status.trim()) ? { status: status.trim(), company } : null;
+  } catch (err) {
+    console.log('[classify] error:', err);
+    return null;
+  }
 }
 
 function senderName(from) {
@@ -253,9 +268,10 @@ async function checkGmail(token) {
     const headers = msg.payload?.headers || [];
     const subject = headers.find(h => h.name === 'Subject')?.value || '';
     const from    = headers.find(h => h.name === 'From')?.value    || '';
-    const status  = classifyEmail(subject, msg.snippet || '');
-    if (!status) continue;
-    const company = extractCompany(subject, from);
+    const result = await classifyEmail(subject, msg.snippet || '');
+    if (!result) continue;
+    const { status, company: aiCompany } = result;
+    const company = aiCompany || extractCompany(subject, from);
     let sheetUpdated = false;
     if (stored.spreadsheetId) {
       sheetUpdated = await updateJobStatus(token, stored.spreadsheetId, company, status);

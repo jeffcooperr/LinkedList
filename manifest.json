@@ -8,7 +8,8 @@
     "https://www.linkedin.com/*",
     "https://sheets.googleapis.com/*",
     "https://www.googleapis.com/*",
-    "https://gmail.googleapis.com/*"
+    "https://gmail.googleapis.com/*",
+    "https://linkedlist-proxy.vercel.app/*"
   ],
   "oauth2": {
     "client_id": "310038408661-5lc4856ksice7v2kij2nk9sk8fs3pq41.apps.googleusercontent.com",
