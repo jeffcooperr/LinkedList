@@ -75,12 +75,15 @@
       btn.innerHTML = `${ICON_TRACK}<span aria-hidden="true" style="vertical-align:middle">Track</span>`;
 
       btn.addEventListener('click', () => {
+        btn.disabled = true;
         if (!isContextValid()) {
+          btn.disabled = false;
           showToast('Please refresh the page to reconnect LinkedList', true);
           return;
         }
         const data = extractJobData();
         if (!data.title && !data.company) {
+          btn.disabled = false;
           showToast('Could not extract job details — try scrolling down first', true);
           return;
         }
