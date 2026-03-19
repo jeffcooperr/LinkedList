@@ -52,41 +52,53 @@
 
   // --- Button injection ---
 
-  function injectButton(saveBtn) {
+  const ICON_TRACK = `<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px;vertical-align:middle;flex-shrink:0"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>`;
+  const ICON_CHECK = `<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px;vertical-align:middle;flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg>`;
+
+  function setTracked(btn) {
+    btn.innerHTML = `${ICON_CHECK}<span aria-hidden="true" style="vertical-align:middle">Tracked</span>`;
+    btn.classList.remove('artdeco-button--primary');
+    btn.classList.add('artdeco-button--secondary');
+    btn.disabled = true;
+  }
+
+  function injectButton(saveBtn, tracked) {
     const btn = document.createElement('button');
     btn.id = BTN_ID;
     btn.type = 'button';
-    btn.className = 'artdeco-button artdeco-button--primary artdeco-button--3 jt-track-btn';
-    btn.innerHTML = `
-      <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px;vertical-align:middle;flex-shrink:0">
-        <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/>
-      </svg>
-      <span aria-hidden="true" style="vertical-align:middle">Track</span>
-    `;
+    btn.className = 'artdeco-button artdeco-button--3 jt-track-btn';
 
-    btn.addEventListener('click', () => {
-      if (!isContextValid()) {
-        showToast('Please refresh the page to reconnect LinkedList', true);
-        return;
-      }
-      const data = extractJobData();
-      if (!data.title && !data.company) {
-        showToast('Could not extract job details — try scrolling down first', true);
-        return;
-      }
+    if (tracked) {
+      setTracked(btn);
+    } else {
+      btn.classList.add('artdeco-button--primary');
+      btn.innerHTML = `${ICON_TRACK}<span aria-hidden="true" style="vertical-align:middle">Track</span>`;
 
-      const payload = { ...data, date_saved: new Date().toISOString() };
-
-      chrome.runtime.sendMessage({ type: 'TRACK_JOB', payload }, (response) => {
-        if (response?.ok) {
-          showToast('Tracked in LinkedList');
-        } else if (response?.error === 'not_signed_in') {
-          showToast('Sign in via the LinkedList popup first', true);
-        } else {
-          showToast('Failed to save — try again', true);
+      btn.addEventListener('click', () => {
+        if (!isContextValid()) {
+          showToast('Please refresh the page to reconnect LinkedList', true);
+          return;
         }
+        const data = extractJobData();
+        if (!data.title && !data.company) {
+          showToast('Could not extract job details — try scrolling down first', true);
+          return;
+        }
+
+        const payload = { ...data, date_saved: new Date().toISOString() };
+
+        chrome.runtime.sendMessage({ type: 'TRACK_JOB', payload }, (response) => {
+          if (response?.ok) {
+            setTracked(btn);
+            showToast('Tracked in LinkedList');
+          } else if (response?.error === 'not_signed_in') {
+            showToast('Sign in via the LinkedList popup first', true);
+          } else {
+            showToast('Failed to save — try again', true);
+          }
+        });
       });
-    });
+    }
 
     saveBtn.insertAdjacentElement('afterend', btn);
   }
@@ -104,7 +116,7 @@
 
   let lastJobId = null;
 
-  function syncButton() {
+  async function syncButton() {
     const saveBtn = document.querySelector('.jobs-save-button');
     const ourBtn  = document.getElementById(BTN_ID);
     const jobId   = getJobId();
@@ -115,7 +127,11 @@
 
     if (saveBtn && !document.getElementById(BTN_ID)) {
       lastJobId = jobId;
-      injectButton(saveBtn);
+      const link = jobId ? `https://www.linkedin.com/jobs/view/${jobId}/` : window.location.href;
+      const { jobs = [] } = await chrome.storage.local.get('jobs');
+      if (document.getElementById(BTN_ID)) return;
+      const tracked = jobs.some(j => j.link === link);
+      injectButton(saveBtn, tracked);
     } else if (!saveBtn && ourBtn) {
       ourBtn.remove();
     }
