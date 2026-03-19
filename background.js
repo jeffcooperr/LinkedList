@@ -1,5 +1,5 @@
 const SHEET_TITLE = 'LinkedList';
-const SHEET_HEADERS = ['Title', 'Company', 'Location', 'Link', 'Date Saved', 'Status'];
+const SHEET_HEADERS = ['Status', 'Position', 'Company', 'Location', 'Date Posted'];
 
 function getToken(interactive) {
   return new Promise((resolve, reject) => {
@@ -30,7 +30,7 @@ async function createSheet(token) {
     }
   );
 
-  const colWidths = [280, 180, 150, 280, 130, 130]; // Title, Company, Location, Link, Date Saved, Status
+  const colWidths = [130, 350, 180, 150, 130]; // Status, Position, Company, Location, Date Posted
 
   // Status conditional format rules: [value, bgColor, textColor]
   const statusFormats = [
@@ -87,7 +87,7 @@ async function createSheet(token) {
         {
           addBanding: {
             bandedRange: {
-              range: { sheetId, startRowIndex: 1, endColumnIndex: 6 },
+              range: { sheetId, startRowIndex: 1, endColumnIndex: 5 },
               rowProperties: {
                 firstBandColor: { red: 1, green: 1, blue: 1 },
                 secondBandColor: { red: 0.97, green: 0.97, blue: 0.98 },
@@ -98,7 +98,7 @@ async function createSheet(token) {
         // Status dropdown
         {
           setDataValidation: {
-            range: { sheetId, startRowIndex: 1, endRowIndex: 1000, startColumnIndex: 5, endColumnIndex: 6 },
+            range: { sheetId, startRowIndex: 1, endRowIndex: 1000, startColumnIndex: 0, endColumnIndex: 1 },
             rule: {
               condition: {
                 type: 'ONE_OF_LIST',
@@ -113,7 +113,7 @@ async function createSheet(token) {
         ...statusFormats.map(([value, bg, fg], index) => ({
           addConditionalFormatRule: {
             rule: {
-              ranges: [{ sheetId, startRowIndex: 1, startColumnIndex: 5, endColumnIndex: 6 }],
+              ranges: [{ sheetId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 1 }],
               booleanRule: {
                 condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: value }] },
                 format: {
@@ -134,15 +134,14 @@ async function createSheet(token) {
 
 async function appendRow(token, spreadsheetId, job) {
   const row = [
-    job.title,
-    job.company,
-    job.location || '',
-    job.link,
-    job.date_saved || '',
     'Saved',
+    `=HYPERLINK("${job.link}","${(job.title || '').replace(/"/g, '""')}")`,
+    job.company || '',
+    job.location || '',
+    job.date_posted || '',
   ];
   const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
     {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -195,7 +194,7 @@ function extractCompany(subject, from) {
 
 async function updateJobStatus(token, spreadsheetId, company, status) {
   const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A:F`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A:C`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   if (!res.ok) return false;
@@ -204,12 +203,13 @@ async function updateJobStatus(token, spreadsheetId, company, status) {
   const needle = company.toLowerCase();
   let matchRow = -1;
   for (let i = values.length - 1; i >= 1; i--) {
-    if ((values[i][1] || '').toLowerCase() === needle) { matchRow = i + 1; break; }
+    const cell = (values[i][2] || '').toLowerCase();
+    if (cell === needle || cell.includes(needle) || needle.includes(cell)) { matchRow = i + 1; break; }
   }
   if (matchRow === -1) return false;
 
   const upd = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!F${matchRow}?valueInputOption=RAW`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A${matchRow}?valueInputOption=RAW`,
     {
       method: 'PUT',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
