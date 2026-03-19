@@ -115,8 +115,14 @@
   }
 
   let lastJobId = null;
+  let cachedJobs = [];
 
-  async function syncButton() {
+  chrome.storage.local.get('jobs', ({ jobs = [] }) => { cachedJobs = jobs; });
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes.jobs) cachedJobs = changes.jobs.newValue || [];
+  });
+
+  function syncButton() {
     const saveBtn = document.querySelector('.jobs-save-button');
     const ourBtn  = document.getElementById(BTN_ID);
     const jobId   = getJobId();
@@ -128,9 +134,7 @@
     if (saveBtn && !document.getElementById(BTN_ID)) {
       lastJobId = jobId;
       const link = jobId ? `https://www.linkedin.com/jobs/view/${jobId}/` : window.location.href;
-      const { jobs = [] } = await chrome.storage.local.get('jobs');
-      if (document.getElementById(BTN_ID)) return;
-      const tracked = jobs.some(j => j.link === link);
+      const tracked = cachedJobs.some(j => j.link === link);
       injectButton(saveBtn, tracked);
     } else if (!saveBtn && ourBtn) {
       ourBtn.remove();
