@@ -125,6 +125,59 @@ async function createSheet(token) {
             index,
           },
         })),
+        // Header row height
+        {
+          updateDimensionProperties: {
+            range: { sheetId, dimension: 'ROWS', startIndex: 0, endIndex: 1 },
+            properties: { pixelSize: 42 },
+            fields: 'pixelSize',
+          },
+        },
+        // Data row height
+        {
+          updateDimensionProperties: {
+            range: { sheetId, dimension: 'ROWS', startIndex: 1 },
+            properties: { pixelSize: 36 },
+            fields: 'pixelSize',
+          },
+        },
+        // All data cells: vertical center, clip text, font size 11
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 5 },
+            cell: {
+              userEnteredFormat: {
+                verticalAlignment: 'MIDDLE',
+                wrapStrategy: 'CLIP',
+                textFormat: { fontSize: 11 },
+              },
+            },
+            fields: 'userEnteredFormat(verticalAlignment,wrapStrategy,textFormat)',
+          },
+        },
+        // Status column: center aligned
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 1 },
+            cell: { userEnteredFormat: { horizontalAlignment: 'CENTER' } },
+            fields: 'userEnteredFormat(horizontalAlignment)',
+          },
+        },
+        // Date column: center aligned
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 1, startColumnIndex: 4, endColumnIndex: 5 },
+            cell: { userEnteredFormat: { horizontalAlignment: 'CENTER' } },
+            fields: 'userEnteredFormat(horizontalAlignment)',
+          },
+        },
+        // Subtle horizontal borders between rows
+        {
+          updateBorders: {
+            range: { sheetId, startRowIndex: 1, endRowIndex: 1000, startColumnIndex: 0, endColumnIndex: 5 },
+            bottom: { style: 'SOLID', color: { red: 0.88, green: 0.88, blue: 0.90 } },
+          },
+        },
       ],
     }),
   });
