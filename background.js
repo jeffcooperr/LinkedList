@@ -310,6 +310,9 @@ async function checkGmail(token) {
   }
   if (!newIds.length) return;
 
+  // Mark as seen immediately so concurrent runs don't reprocess the same emails
+  await chrome.storage.local.set({ seenEmailIds: [...seenEmailIds, ...newIds].slice(-500) });
+
   const newEvents = [];
   for (const id of newIds) {
     const msgRes = await fetch(
@@ -333,10 +336,9 @@ async function checkGmail(token) {
     newEvents.push({ id, company, subject, status, receivedAt: new Date().toISOString(), sheetUpdated });
   }
 
-  await chrome.storage.local.set({
-    emailEvents:  [...newEvents, ...emailEvents].slice(0, 50),
-    seenEmailIds: [...seenEmailIds, ...newIds].slice(-500),
-  });
+  if (newEvents.length) {
+    await chrome.storage.local.set({ emailEvents: [...newEvents, ...emailEvents].slice(0, 50) });
+  }
 }
 
 // ── Alarms ────────────────────────────────────────────────────────────────────
