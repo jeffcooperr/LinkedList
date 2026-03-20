@@ -64,14 +64,20 @@ function renderJobs(jobs) {
 
   emptyEl.style.display = 'none';
   listEl.innerHTML = jobs.map((job, i) => `
-    <div class="job-card">
+    <div class="job-card" data-link="${esc(job.link)}" style="cursor:pointer">
       <div class="job-title">${esc(job.title) || 'Untitled'}</div>
       <div class="job-meta">${esc(job.company)}${job.company && job.location ? ' · ' : ''}${esc(job.location)}</div>
-      <div class="job-link"><a href="${esc(job.link)}" target="_blank">${esc(job.link)}</a></div>
       ${job.savedAt ? `<div class="job-date">Saved ${formatDate(job.savedAt)}</div>` : ''}
       <button class="remove-btn" data-index="${i}" title="Remove">✕</button>
     </div>
   `).join('');
+
+  listEl.querySelectorAll('.job-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.remove-btn')) return;
+      chrome.tabs.create({ url: card.dataset.link });
+    });
+  });
 
   listEl.querySelectorAll('.remove-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
