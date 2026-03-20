@@ -273,9 +273,10 @@ async function updateJobStatus(token, spreadsheetId, company, status) {
 }
 
 async function checkGmail(token) {
-  const stored = await chrome.storage.local.get(['gmailHistoryId', 'seenEmailIds', 'emailEvents', 'spreadsheetId']);
-  const seenEmailIds = stored.seenEmailIds || [];
-  const emailEvents  = stored.emailEvents  || [];
+  const stored = await chrome.storage.local.get(['gmailHistoryId', 'seenEmailIds', 'seenThreadStatuses', 'emailEvents', 'spreadsheetId']);
+  const seenEmailIds      = stored.seenEmailIds      || [];
+  const seenThreadStatuses = new Set(stored.seenThreadStatuses || []);
+  const emailEvents        = stored.emailEvents      || [];
 
   // First run — capture current historyId as baseline, process nothing
   if (!stored.gmailHistoryId) {
@@ -328,6 +329,9 @@ async function checkGmail(token) {
     const result = await classifyEmail(subject, msg.snippet || '');
     if (!result) continue;
     const { status, company: aiCompany } = result;
+    const threadKey = `${msg.threadId}|${status}`;
+    if (seenThreadStatuses.has(threadKey)) continue;
+    seenThreadStatuses.add(threadKey);
     const company = aiCompany || extractCompany(subject, from);
     let sheetUpdated = false;
     if (stored.spreadsheetId) {
@@ -336,6 +340,7 @@ async function checkGmail(token) {
     newEvents.push({ id, company, subject, status, receivedAt: new Date().toISOString(), sheetUpdated });
   }
 
+  await chrome.storage.local.set({ seenThreadStatuses: [...seenThreadStatuses] });
   if (newEvents.length) {
     await chrome.storage.local.set({ emailEvents: [...newEvents, ...emailEvents].slice(0, 50) });
   }
