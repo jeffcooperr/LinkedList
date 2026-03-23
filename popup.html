@@ -158,8 +158,10 @@
       display: flex;
       align-items: flex-start;
       gap: 8px;
+      text-decoration: none;
+      color: inherit;
     }
-    .email-card:hover { background: #f9f9f9; }
+    .email-card:hover { background: #f9f9f9; cursor: pointer; }
     .status-badge {
       flex-shrink: 0;
       font-size: 10px;
@@ -168,15 +170,52 @@
       border-radius: 10px;
       margin-top: 1px;
     }
-    .status-badge--Applied      { background: #e8f0fe; color: #1a73e8; }
-    .status-badge--Interviewing { background: #fef9e7; color: #c07800; }
-    .status-badge--Offer        { background: #e6f4ea; color: #1e8e3e; }
-    .status-badge--Rejected     { background: #fce8e6; color: #d93025; }
+    .status-badge--Applied       { background: #e8f0fe; color: #1a73e8; }
+    .status-badge--Interviewing  { background: #fef9e7; color: #c07800; }
+    .status-badge--Phone-Screen  { background: #f3e8ff; color: #7c3aed; }
+    .status-badge--Offer         { background: #e6f4ea; color: #1e8e3e; }
+    .status-badge--Rejected      { background: #fce8e6; color: #d93025; }
     .email-body { flex: 1; min-width: 0; }
     .email-company { font-weight: 600; font-size: 12px; }
     .email-subject { font-size: 11px; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .email-time { font-size: 10px; color: #aaa; margin-top: 2px; }
     #email-empty { padding: 16px; text-align: center; color: #aaa; font-size: 12px; }
+    .email-title { font-size: 11px; color: #444; font-style: italic; }
+
+    /* ── Needs Review section ── */
+    #unresolved-section { border-top: 2px solid #f0f0f0; }
+    .unresolved-card {
+      padding: 8px 16px 10px;
+      border-bottom: 1px solid #f0f0f0;
+      background: #fffdf0;
+    }
+    .unresolved-header { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+    .unresolved-company { font-weight: 600; font-size: 12px; }
+    .unresolved-subject { font-size: 11px; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 6px; text-decoration: none; display: block; }
+    .unresolved-subject:hover { color: #0a66c2; text-decoration: underline; }
+    .unresolved-actions { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
+    .unresolved-select {
+      flex: 1;
+      font-size: 11px;
+      padding: 3px 6px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: #fff;
+    }
+    .assign-btn {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border: none;
+      border-radius: 4px;
+      background: #0a66c2;
+      color: #fff;
+      cursor: pointer;
+    }
+    .assign-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .assign-btn:hover:not(:disabled) { background: #0855a3; }
+    .dismiss-btn { font-size: 10px; color: #bbb; background: none; border: none; cursor: pointer; padding: 0; }
+    .dismiss-btn:hover { color: #888; text-decoration: underline; }
 
   </style>
 </head>
@@ -216,6 +255,12 @@
       <p>Navigate to a LinkedIn job page and click <em>Track</em>.</p>
     </div>
     <div id="job-list"></div>
+
+    <!-- Needs Review -->
+    <div id="unresolved-section" style="display:none">
+      <div class="section-header"><span>Needs Review</span></div>
+      <div id="unresolved-list"></div>
+    </div>
 
     <!-- Email activity -->
     <div id="email-section">

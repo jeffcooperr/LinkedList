@@ -22,6 +22,14 @@ function esc(str = '') {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function statusSlug(s) { return (s || '').replace(/\s+/g, '-'); }
+
+function matchesByCompany(jobCompany, eventCompany) {
+  const jc = (jobCompany || '').toLowerCase();
+  const ec = (eventCompany || '').toLowerCase();
+  return jc === ec || jc.includes(ec) || ec.includes(jc);
+}
+
 // ── Screens ──────────────────────────────────────────────────────────────────
 
 function showAuthScreen() {
@@ -38,12 +46,14 @@ async function showMainScreen() {
     document.getElementById('user-email').textContent = userInfo.email;
   }
 
-  const { jobs = [], spreadsheetId, gmailEnabled, emailEvents = [] } = await chrome.storage.local.get(['jobs', 'spreadsheetId', 'gmailEnabled', 'emailEvents']);
+  const { jobs = [], spreadsheetId, gmailEnabled, emailEvents = [], unresolvedEvents = [] } =
+    await chrome.storage.local.get(['jobs', 'spreadsheetId', 'gmailEnabled', 'emailEvents', 'unresolvedEvents']);
 
   const openBtn = document.getElementById('open-sheet-btn');
   if (spreadsheetId) { openBtn.disabled = false; openBtn.title = ''; }
 
   renderJobs(jobs);
+  renderUnresolvedEvents(unresolvedEvents, jobs);
   renderEmailEvents(emailEvents, gmailEnabled);
 }
 
@@ -90,6 +100,77 @@ function renderJobs(jobs) {
   });
 }
 
+// ── Unresolved events ─────────────────────────────────────────────────────────
+
+function renderUnresolvedEvents(events, allJobs) {
+  const section = document.getElementById('unresolved-section');
+  const listEl  = document.getElementById('unresolved-list');
+
+  if (!events.length) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+
+  listEl.innerHTML = events.map((e, i) => {
+    const matches = allJobs.filter(j => matchesByCompany(j.company, e.company));
+    const options = matches.length
+      ? matches.map((j, ji) => `<option value="${ji}">${esc(j.title)}</option>`).join('')
+      : '';
+    return `
+      <div class="unresolved-card">
+        <div class="unresolved-header">
+          <span class="status-badge status-badge--${statusSlug(e.status)}">${esc(e.status)}</span>
+          <span class="unresolved-company">${esc(e.company)}</span>
+        </div>
+        ${e.threadId
+          ? `<a class="unresolved-subject" href="https://mail.google.com/mail/u/0/#all/${e.threadId}" target="_blank">${esc(e.subject)}</a>`
+          : `<div class="unresolved-subject">${esc(e.subject)}</div>`
+        }
+        ${matches.length ? `
+          <div class="unresolved-actions">
+            <select class="unresolved-select" data-idx="${i}">
+              <option value="-1">Select job…</option>
+              ${options}
+            </select>
+            <button class="assign-btn" data-idx="${i}" disabled>Assign</button>
+          </div>
+        ` : `<div style="font-size:11px;color:#aaa;margin-bottom:4px">No tracked jobs found for ${esc(e.company)}</div>`}
+        <button class="dismiss-btn" data-event-id="${esc(e.id)}">Dismiss</button>
+      </div>
+    `;
+  }).join('');
+
+  listEl.querySelectorAll('.unresolved-select').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const btn = listEl.querySelector(`.assign-btn[data-idx="${sel.dataset.idx}"]`);
+      btn.disabled = sel.value === '-1';
+    });
+  });
+
+  listEl.querySelectorAll('.assign-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const i        = parseInt(btn.dataset.idx, 10);
+      const sel      = listEl.querySelector(`.unresolved-select[data-idx="${i}"]`);
+      const jobIdx   = parseInt(sel.value, 10);
+      if (jobIdx === -1) return;
+      const event    = events[i];
+      const matches  = allJobs.filter(j => matchesByCompany(j.company, event.company));
+      const selected = matches[jobIdx];
+      btn.textContent = '…';
+      btn.disabled = true;
+      chrome.runtime.sendMessage({
+        type: 'ASSIGN_EMAIL_EVENT',
+        payload: { event, jobTitle: selected.title, jobCompany: selected.company },
+      });
+    });
+  });
+
+  listEl.querySelectorAll('.dismiss-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const { unresolvedEvents: cur = [] } = await chrome.storage.local.get('unresolvedEvents');
+      await chrome.storage.local.set({ unresolvedEvents: cur.filter(e => e.id !== btn.dataset.eventId) });
+    });
+  });
+}
+
 // ── Email events ─────────────────────────────────────────────────────────────
 
 function renderEmailEvents(events, gmailEnabled) {
@@ -113,16 +194,21 @@ function renderEmailEvents(events, gmailEnabled) {
   }
 
   emptyEl.style.display = 'none';
-  listEl.innerHTML = events.map(e => `
-    <div class="email-card">
-      <span class="status-badge status-badge--${esc(e.status)}">${esc(e.status)}</span>
+  listEl.innerHTML = events.map(e => {
+    const tag  = e.threadId ? 'a' : 'div';
+    const href = e.threadId ? `href="https://mail.google.com/mail/u/0/#all/${e.threadId}" target="_blank"` : '';
+    return `
+    <${tag} class="email-card" ${href}>
+      <span class="status-badge status-badge--${statusSlug(e.status)}">${esc(e.status)}</span>
       <div class="email-body">
         <div class="email-company">${esc(e.company)}</div>
+        ${e.title ? `<div class="email-title">${esc(e.title)}</div>` : ''}
         <div class="email-subject">${esc(e.subject)}</div>
         <div class="email-time">${formatDate(e.receivedAt)}</div>
       </div>
-    </div>
-  `).join('');
+    </${tag}>
+  `;
+  }).join('');
 }
 
 document.getElementById('enable-gmail-btn').addEventListener('click', async () => {
@@ -177,9 +263,13 @@ document.getElementById('open-sheet-btn').addEventListener('click', async () => 
 
 // ── Live updates ─────────────────────────────────────────────────────────────
 
-chrome.storage.onChanged.addListener((changes) => {
-  if (changes.jobs)        renderJobs(changes.jobs.newValue || []);
-  if (changes.emailEvents) renderEmailEvents(changes.emailEvents.newValue || [], true);
+chrome.storage.onChanged.addListener(async (changes) => {
+  if (changes.jobs)             renderJobs(changes.jobs.newValue || []);
+  if (changes.emailEvents)      renderEmailEvents(changes.emailEvents.newValue || [], true);
+  if (changes.unresolvedEvents) {
+    const { jobs = [] } = await chrome.storage.local.get('jobs');
+    renderUnresolvedEvents(changes.unresolvedEvents.newValue || [], jobs);
+  }
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────

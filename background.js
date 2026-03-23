@@ -222,11 +222,13 @@ async function classifyEmail(subject, snippet) {
     });
     if (!res.ok) { console.log('[classify] HTTP error', res.status); return null; }
     const { text } = await res.json();
-    console.log('[classify] subject:', subject, '| gemini raw:', JSON.stringify(text));
+    console.log('[classify] subject:', subject, '| snippet:', snippet, '| gemini raw:', JSON.stringify(text));
     if (!text || text === 'null') return null;
-    const [status, ...rest] = text.split('|');
-    const company = rest.join('|').trim();
-    return VALID_STATUSES.includes(status.trim()) ? { status: status.trim(), company } : null;
+    const parts = text.split('|');
+    const status  = parts[0].trim();
+    const company = (parts[1] || '').trim();
+    const title   = (parts[2] || '').trim();
+    return VALID_STATUSES.includes(status) ? { status, company, title } : null;
   } catch (err) {
     console.log('[classify] error:', err);
     return null;
@@ -245,21 +247,35 @@ function extractCompany(subject, from) {
   return senderName(from);
 }
 
-async function updateJobStatus(token, spreadsheetId, company, status) {
+async function updateJobStatus(token, spreadsheetId, company, status, title = '') {
   const res = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A:C`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
-  if (!res.ok) return false;
+  if (!res.ok) return { updated: false, ambiguous: false };
   const { values = [] } = await res.json();
 
   const needle = company.toLowerCase();
-  let matchRow = -1;
+  const companyMatches = [];
   for (let i = values.length - 1; i >= 1; i--) {
     const cell = (values[i][2] || '').toLowerCase();
-    if (cell === needle || cell.includes(needle) || needle.includes(cell)) { matchRow = i + 1; break; }
+    if (cell === needle || cell.includes(needle) || needle.includes(cell)) companyMatches.push(i + 1);
   }
-  if (matchRow === -1) return false;
+  if (companyMatches.length === 0) return { updated: false, ambiguous: false };
+
+  let matchRow = -1;
+  if (companyMatches.length === 1) {
+    matchRow = companyMatches[0];
+  } else if (title) {
+    const titleNeedle = title.toLowerCase();
+    for (const rowNum of companyMatches) {
+      const cellTitle = (values[rowNum - 1][1] || '').toLowerCase();
+      if (cellTitle.includes(titleNeedle) || titleNeedle.includes(cellTitle)) { matchRow = rowNum; break; }
+    }
+    if (matchRow === -1) return { updated: false, ambiguous: true };
+  } else {
+    return { updated: false, ambiguous: true };
+  }
 
   const upd = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A${matchRow}?valueInputOption=RAW`,
@@ -269,14 +285,15 @@ async function updateJobStatus(token, spreadsheetId, company, status) {
       body: JSON.stringify({ values: [[status]] }),
     }
   );
-  return upd.ok;
+  return { updated: upd.ok, ambiguous: false };
 }
 
 async function checkGmail(token) {
-  const stored = await chrome.storage.local.get(['gmailHistoryId', 'seenEmailIds', 'seenThreadStatuses', 'emailEvents', 'spreadsheetId']);
-  const seenEmailIds      = stored.seenEmailIds      || [];
+  const stored = await chrome.storage.local.get(['gmailHistoryId', 'seenEmailIds', 'seenThreadStatuses', 'emailEvents', 'spreadsheetId', 'unresolvedEvents']);
+  const seenEmailIds       = stored.seenEmailIds       || [];
   const seenThreadStatuses = new Set(stored.seenThreadStatuses || []);
-  const emailEvents        = stored.emailEvents      || [];
+  const emailEvents        = stored.emailEvents        || [];
+  const unresolvedEvents   = stored.unresolvedEvents   || [];
 
   // First run — capture current historyId as baseline, process nothing
   if (!stored.gmailHistoryId) {
@@ -315,6 +332,7 @@ async function checkGmail(token) {
   await chrome.storage.local.set({ seenEmailIds: [...seenEmailIds, ...newIds].slice(-500) });
 
   const newEvents = [];
+  const newUnresolved = [];
   for (const id of newIds) {
     const msgRes = await fetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From`,
@@ -328,21 +346,30 @@ async function checkGmail(token) {
     if (/jobalerts-noreply@linkedin\.com/i.test(from)) continue;
     const result = await classifyEmail(subject, msg.snippet || '');
     if (!result) continue;
-    const { status, company: aiCompany } = result;
+    const { status, company: aiCompany, title: aiTitle } = result;
     const threadKey = `${msg.threadId}|${status}`;
     if (seenThreadStatuses.has(threadKey)) continue;
     seenThreadStatuses.add(threadKey);
     const company = aiCompany || extractCompany(subject, from);
+    const title   = aiTitle   || '';
     let sheetUpdated = false;
     if (stored.spreadsheetId) {
-      sheetUpdated = await updateJobStatus(token, stored.spreadsheetId, company, status);
+      const updateResult = await updateJobStatus(token, stored.spreadsheetId, company, status, title);
+      if (updateResult.ambiguous) {
+        newUnresolved.push({ id, threadId: msg.threadId, company, title, subject, status, receivedAt: new Date().toISOString() });
+        continue;
+      }
+      sheetUpdated = updateResult.updated;
     }
-    newEvents.push({ id, company, subject, status, receivedAt: new Date().toISOString(), sheetUpdated });
+    newEvents.push({ id, threadId: msg.threadId, company, title, subject, status, receivedAt: new Date().toISOString(), sheetUpdated });
   }
 
   await chrome.storage.local.set({ seenThreadStatuses: [...seenThreadStatuses] });
   if (newEvents.length) {
     await chrome.storage.local.set({ emailEvents: [...newEvents, ...emailEvents].slice(0, 50) });
+  }
+  if (newUnresolved.length) {
+    await chrome.storage.local.set({ unresolvedEvents: [...newUnresolved, ...unresolvedEvents].slice(0, 50) });
   }
 }
 
@@ -370,37 +397,58 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(
 );
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.type !== 'TRACK_JOB') return;
+  if (message.type === 'TRACK_JOB') {
+    (async () => {
+      try {
+        const token = await getToken(false);
 
-  (async () => {
-    try {
-      const token = await getToken(false);
+        const stored = await chrome.storage.local.get('spreadsheetId');
+        let { spreadsheetId } = stored;
+        if (!spreadsheetId) {
+          spreadsheetId = await createSheet(token);
+          await chrome.storage.local.set({ spreadsheetId });
+        }
 
-      const stored = await chrome.storage.local.get('spreadsheetId');
-      let { spreadsheetId } = stored;
-      if (!spreadsheetId) {
-        spreadsheetId = await createSheet(token);
-        await chrome.storage.local.set({ spreadsheetId });
+        const { jobs = [] } = await chrome.storage.local.get('jobs');
+        if (!jobs.find(j => j.link === message.payload.link)) {
+          await appendRow(token, spreadsheetId, message.payload);
+          jobs.unshift({ ...message.payload, savedAt: message.payload.date_saved });
+          await chrome.storage.local.set({ jobs });
+        }
+
+        sendResponse({ ok: true });
+      } catch (err) {
+        const notSignedIn =
+          err.message.includes('not granted') ||
+          err.message.includes('revoked') ||
+          err.message.includes('OAuth') ||
+          err.message.includes('interactive');
+        sendResponse({ ok: false, error: notSignedIn ? 'not_signed_in' : err.message });
       }
+    })();
+    return true;
+  }
 
-      await appendRow(token, spreadsheetId, message.payload);
+  if (message.type === 'ASSIGN_EMAIL_EVENT') {
+    (async () => {
+      try {
+        const token = await getToken(false);
+        const { spreadsheetId, unresolvedEvents = [], emailEvents = [] } =
+          await chrome.storage.local.get(['spreadsheetId', 'unresolvedEvents', 'emailEvents']);
+        if (!spreadsheetId) { sendResponse({ ok: false }); return; }
 
-      const { jobs = [] } = await chrome.storage.local.get('jobs');
-      if (!jobs.find(j => j.link === message.payload.link)) {
-        jobs.unshift({ ...message.payload, savedAt: message.payload.date_saved });
-        await chrome.storage.local.set({ jobs });
+        const { event, jobTitle, jobCompany } = message.payload;
+        const result = await updateJobStatus(token, spreadsheetId, jobCompany, event.status, jobTitle);
+
+        await chrome.storage.local.set({
+          unresolvedEvents: unresolvedEvents.filter(e => e.id !== event.id),
+          emailEvents: [{ ...event, sheetUpdated: result.updated }, ...emailEvents].slice(0, 50),
+        });
+        sendResponse({ ok: true });
+      } catch (err) {
+        sendResponse({ ok: false, error: err.message });
       }
-
-      sendResponse({ ok: true });
-    } catch (err) {
-      const notSignedIn =
-        err.message.includes('not granted') ||
-        err.message.includes('revoked') ||
-        err.message.includes('OAuth') ||
-        err.message.includes('interactive');
-      sendResponse({ ok: false, error: notSignedIn ? 'not_signed_in' : err.message });
-    }
-  })();
-
-  return true; // keep channel open for async response
+    })();
+    return true;
+  }
 });

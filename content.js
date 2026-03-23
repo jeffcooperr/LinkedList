@@ -109,16 +109,20 @@
           return;
         }
 
+        pendingLinks.add(data.link);
         const payload = { ...data, date_saved: new Date().toISOString() };
 
         chrome.runtime.sendMessage({ type: 'TRACK_JOB', payload }, (response) => {
           if (response?.ok) {
             setTracked(btn);
             showToast('Tracked in LinkedList');
-          } else if (response?.error === 'not_signed_in') {
-            showToast('Sign in via the LinkedList popup first', true);
           } else {
-            showToast('Failed to save — try again', true);
+            pendingLinks.delete(data.link);
+            if (response?.error === 'not_signed_in') {
+              showToast('Sign in via the LinkedList popup first', true);
+            } else {
+              showToast('Failed to save — try again', true);
+            }
           }
         });
       });
@@ -140,6 +144,7 @@
 
   let lastJobId = null;
   let cachedJobs = [];
+  const pendingLinks = new Set();
 
   chrome.storage.local.get('jobs', ({ jobs = [] }) => { cachedJobs = jobs; });
   chrome.storage.onChanged.addListener((changes) => {
@@ -158,7 +163,7 @@
     if (saveBtn && !document.getElementById(BTN_ID)) {
       lastJobId = jobId;
       const link = jobId ? `https://www.linkedin.com/jobs/view/${jobId}/` : window.location.href;
-      const tracked = cachedJobs.some(j => j.link === link);
+      const tracked = cachedJobs.some(j => j.link === link) || pendingLinks.has(link);
       injectButton(saveBtn, tracked);
     } else if (!saveBtn && ourBtn) {
       ourBtn.remove();
