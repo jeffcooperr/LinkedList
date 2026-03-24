@@ -96,6 +96,32 @@
     .toolbar-btn:hover { background: #0a66c2; color: #fff; }
     .toolbar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
     .toolbar-btn:disabled:hover { background: #fff; color: #0a66c2; }
+    /* ── Stats bar ── */
+    #stats-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 8px 16px;
+      border-bottom: 1px solid #eee;
+      background: #fafafa;
+    }
+    .stat-chip {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+    .stat-chip--total    { background: #f0f0f0; color: #555; }
+    .stat-chip--Saved        { background: #ececec; color: #4a4a4a; }
+    .stat-chip--Applied      { background: #e8f0fe; color: #1a73e8; }
+    .stat-chip--Interviewing { background: #fef9e7; color: #c07800; }
+    .stat-chip--Phone-Screen { background: #f3e8ff; color: #7c3aed; }
+    .stat-chip--Offer        { background: #e6f4ea; color: #1e8e3e; }
+    .stat-chip--Rejected     { background: #fce8e6; color: #d93025; }
+
     #empty {
       padding: 32px 16px;
       text-align: center;
@@ -251,6 +277,7 @@
     <div id="toolbar">
       <button class="toolbar-btn" id="open-sheet-btn" disabled title="Track a job first to create your sheet">Open Sheet</button>
     </div>
+    <div id="stats-bar" style="display:none"></div>
     <div id="empty">
       <strong>No jobs tracked yet</strong>
       <p>Navigate to a LinkedIn job page and click <em>Track</em>.</p>

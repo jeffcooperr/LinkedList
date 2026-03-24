@@ -246,6 +246,7 @@ async function createSheet(token) {
     }),
   });
 
+  await chrome.storage.local.set({ sheetId: String(sheetId) });
   return spreadsheetId;
 }
 
@@ -278,6 +279,18 @@ const VALID_STATUSES = ['Applied', 'Interviewing', 'Phone Screen', 'Offer', 'Rej
 
 const CLASSIFY_URL = 'https://linkedlist-proxy.vercel.app/api/classify';
 
+function extractEmailBody(payload) {
+  if (!payload) return '';
+  if (payload.mimeType === 'text/plain' && payload.body?.data) {
+    return atob(payload.body.data.replace(/-/g, '+').replace(/_/g, '/'));
+  }
+  for (const part of payload.parts || []) {
+    const text = extractEmailBody(part);
+    if (text) return text;
+  }
+  return '';
+}
+
 async function classifyEmail(subject, snippet) {
   try {
     const res = await fetch(CLASSIFY_URL, {
@@ -285,17 +298,15 @@ async function classifyEmail(subject, snippet) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ subject, snippet }),
     });
-    if (!res.ok) { console.log('[classify] HTTP error', res.status); return null; }
+    if (!res.ok) return null;
     const { text } = await res.json();
-    console.log('[classify] subject:', subject, '| snippet:', snippet, '| gemini raw:', JSON.stringify(text));
     if (!text || text === 'null') return null;
     const parts = text.split('|');
     const status  = parts[0].trim();
     const company = (parts[1] || '').trim();
     const title   = (parts[2] || '').trim();
     return VALID_STATUSES.includes(status) ? { status, company, title } : null;
-  } catch (err) {
-    console.log('[classify] error:', err);
+  } catch {
     return null;
   }
 }
@@ -400,7 +411,7 @@ async function checkGmail(token) {
   const newUnresolved = [];
   for (const id of newIds) {
     const msgRes = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From`,
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (!msgRes.ok) continue;
@@ -409,7 +420,8 @@ async function checkGmail(token) {
     const subject = headers.find(h => h.name === 'Subject')?.value || '';
     const from    = headers.find(h => h.name === 'From')?.value    || '';
     if (/jobalerts-noreply@linkedin\.com/i.test(from)) continue;
-    const result = await classifyEmail(subject, msg.snippet || '');
+    const bodyText = extractEmailBody(msg.payload).slice(0, 600) || msg.snippet || '';
+    const result = await classifyEmail(subject, bodyText);
     if (!result) continue;
     const { status, company: aiCompany, title: aiTitle } = result;
     const threadKey = `${msg.threadId}|${status}`;
@@ -494,6 +506,60 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           err.message.includes('OAuth') ||
           err.message.includes('interactive');
         sendResponse({ ok: false, error: notSignedIn ? 'not_signed_in' : err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === 'REMOVE_JOB') {
+    (async () => {
+      try {
+        const token = await getToken(false);
+        const { spreadsheetId, sheetId: storedSheetId } = await chrome.storage.local.get(['spreadsheetId', 'sheetId']);
+
+        if (spreadsheetId) {
+          // Resolve sheetId — use stored value or fetch from metadata
+          let sheetId = storedSheetId ? parseInt(storedSheetId) : null;
+          if (sheetId === null) {
+            const meta = await fetch(
+              `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            if (meta.ok) {
+              const m = await meta.json();
+              sheetId = m.sheets[0].properties.sheetId;
+              await chrome.storage.local.set({ sheetId: String(sheetId) });
+            }
+          }
+
+          if (sheetId !== null) {
+            const valRes = await fetch(
+              `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A:C`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            if (valRes.ok) {
+              const { values = [] } = await valRes.json();
+              const { title = '', company = '' } = message.payload;
+              let rowIndex = -1;
+              for (let i = 1; i < values.length; i++) {
+                if ((values[i][1] || '').toLowerCase() === title.toLowerCase() &&
+                    (values[i][2] || '').toLowerCase() === company.toLowerCase()) {
+                  rowIndex = i; break;
+                }
+              }
+              if (rowIndex !== -1) {
+                await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ requests: [{ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: rowIndex, endIndex: rowIndex + 1 } } }] }),
+                });
+              }
+            }
+          }
+        }
+        sendResponse({ ok: true });
+      } catch (err) {
+        sendResponse({ ok: false });
       }
     })();
     return true;

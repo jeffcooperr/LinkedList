@@ -46,14 +46,17 @@ async function showMainScreen() {
     document.getElementById('user-email').textContent = userInfo.email;
   }
 
-  const { jobs = [], spreadsheetId, gmailEnabled, emailEvents = [], unresolvedEvents = [] } =
+  let { jobs = [], spreadsheetId, gmailEnabled, emailEvents = [], unresolvedEvents = [] } =
     await chrome.storage.local.get(['jobs', 'spreadsheetId', 'gmailEnabled', 'emailEvents', 'unresolvedEvents']);
 
   await chrome.storage.local.set({ unseenEmailCount: 0 });
 
+  if (spreadsheetId && jobs.length) jobs = await syncSheetStatuses(spreadsheetId, jobs);
+
   const openBtn = document.getElementById('open-sheet-btn');
   if (spreadsheetId) { openBtn.disabled = false; openBtn.title = ''; }
 
+  renderStats(jobs);
   renderJobs(jobs);
   renderUnresolvedEvents(unresolvedEvents, jobs);
   renderEmailEvents(emailEvents, gmailEnabled);
@@ -98,11 +101,67 @@ function renderJobs(jobs) {
     btn.addEventListener('click', async (e) => {
       const idx = parseInt(e.currentTarget.dataset.index, 10);
       const { jobs: current = [] } = await chrome.storage.local.get('jobs');
-      current.splice(idx, 1);
+      const [removed] = current.splice(idx, 1);
       await chrome.storage.local.set({ jobs: current });
+      renderStats(current);
       renderJobs(current);
+      chrome.runtime.sendMessage({ type: 'REMOVE_JOB', payload: removed });
     });
   });
+}
+
+// ── Sheet status sync ─────────────────────────────────────────────────────────
+
+async function syncSheetStatuses(spreadsheetId, jobs) {
+  try {
+    const token = await getToken(false);
+    const res = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A:C`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) return jobs;
+    const { values = [] } = await res.json();
+
+    let changed = false;
+    const updated = jobs.map(job => {
+      const row = values.slice(1).find(r => {
+        return (r[1] || '').toLowerCase() === (job.title || '').toLowerCase() &&
+               (r[2] || '').toLowerCase() === (job.company || '').toLowerCase();
+      });
+      if (!row?.[0] || row[0].trim() === job.status) return job;
+      changed = true;
+      return { ...job, status: row[0].trim() };
+    });
+
+    if (changed) await chrome.storage.local.set({ jobs: updated });
+    return updated;
+  } catch {
+    return jobs;
+  }
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+
+function renderStats(jobs) {
+  const bar = document.getElementById('stats-bar');
+  if (!jobs.length) { bar.style.display = 'none'; return; }
+
+  const counts = {};
+  for (const job of jobs) {
+    const s = job.status || 'Saved';
+    counts[s] = (counts[s] || 0) + 1;
+  }
+
+  const ORDER = ['Saved', 'Applied', 'Phone Screen', 'Interviewing', 'Offer', 'Rejected'];
+  const chips = [`<span class="stat-chip stat-chip--total">${jobs.length} total</span>`];
+  for (const status of ORDER) {
+    if (counts[status]) {
+      chips.push(`<span class="stat-chip stat-chip--${statusSlug(status)}">${counts[status]} ${esc(status)}</span>`);
+    }
+  }
+
+  bar.style.display = 'flex';
+  bar.innerHTML = chips.join('');
 }
 
 // ── Unresolved events ─────────────────────────────────────────────────────────
@@ -208,7 +267,7 @@ function renderEmailEvents(events, gmailEnabled) {
       <div class="email-body">
         <div class="email-company">${esc(e.company)}</div>
         ${e.title ? `<div class="email-title">${esc(e.title)}</div>` : ''}
-        <div class="email-subject">${esc(e.subject)}</div>
+        ${e.subject.toLowerCase() !== (e.company || '').toLowerCase() ? `<div class="email-subject">${esc(e.subject)}</div>` : ''}
         <div class="email-time">${formatDate(e.receivedAt)}</div>
       </div>
     </${tag}>
@@ -269,7 +328,7 @@ document.getElementById('open-sheet-btn').addEventListener('click', async () => 
 // ── Live updates ─────────────────────────────────────────────────────────────
 
 chrome.storage.onChanged.addListener(async (changes) => {
-  if (changes.jobs)             renderJobs(changes.jobs.newValue || []);
+  if (changes.jobs) { renderStats(changes.jobs.newValue || []); renderJobs(changes.jobs.newValue || []); }
   if (changes.emailEvents)      renderEmailEvents(changes.emailEvents.newValue || [], true);
   if (changes.unresolvedEvents) {
     const { jobs = [] } = await chrome.storage.local.get('jobs');
