@@ -1,5 +1,45 @@
 const SHEET_TITLE = 'LinkedList';
-const SHEET_HEADERS = ['Status', 'Position', 'Company', 'Location', 'Date Posted'];
+const SHEET_HEADERS = ['Status', 'Position', 'Company', 'Location', 'Posted & Applicants (when tracked)', 'Notes'];
+
+// ── Local job status sync ─────────────────────────────────────────────────────
+
+async function updateLocalJobStatus(company, status, title) {
+  const { jobs = [] } = await chrome.storage.local.get('jobs');
+  const needle      = company.toLowerCase();
+  const titleNeedle = (title || '').toLowerCase();
+  const updated = jobs.map(j => {
+    const jc = (j.company || '').toLowerCase();
+    if (jc !== needle && !jc.includes(needle) && !needle.includes(jc)) return j;
+    if (titleNeedle) {
+      const jt = (j.title || '').toLowerCase();
+      if (!jt.includes(titleNeedle) && !titleNeedle.includes(jt)) return j;
+    }
+    return { ...j, status };
+  });
+  await chrome.storage.local.set({ jobs: updated });
+}
+
+// ── Badge ─────────────────────────────────────────────────────────────────────
+
+function updateBadge(unresolvedCount, unseenCount) {
+  if (unresolvedCount > 0) {
+    chrome.action.setBadgeText({ text: String(unresolvedCount) });
+    chrome.action.setBadgeBackgroundColor({ color: '#ef4444' });
+  } else if (unseenCount > 0) {
+    chrome.action.setBadgeText({ text: String(unseenCount) });
+    chrome.action.setBadgeBackgroundColor({ color: '#2563eb' });
+  } else {
+    chrome.action.setBadgeText({ text: '' });
+  }
+}
+
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.unresolvedEvents || changes.unseenEmailCount) {
+    chrome.storage.local.get(['unresolvedEvents', 'unseenEmailCount'], ({ unresolvedEvents = [], unseenEmailCount = 0 }) => {
+      updateBadge(unresolvedEvents.length, unseenEmailCount);
+    });
+  }
+});
 
 function getToken(interactive) {
   return new Promise((resolve, reject) => {
@@ -30,7 +70,7 @@ async function createSheet(token) {
     }
   );
 
-  const colWidths = [130, 350, 180, 150, 130]; // Status, Position, Company, Location, Date Posted
+  const colWidths = [130, 350, 250, 200, 300, 160]; // Status, Position, Company, Location, Posted & Applicants (when tracked), Notes
 
   // Status conditional format rules: [value, bgColor, textColor]
   const statusFormats = [
@@ -61,11 +101,11 @@ async function createSheet(token) {
             fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
           },
         },
-        // Freeze header row
+        // Freeze header row + hide gridlines
         {
           updateSheetProperties: {
-            properties: { sheetId, gridProperties: { frozenRowCount: 1 } },
-            fields: 'gridProperties.frozenRowCount',
+            properties: { sheetId, gridProperties: { frozenRowCount: 1, hideGridlines: true } },
+            fields: 'gridProperties.frozenRowCount,gridProperties.hideGridlines',
           },
         },
         // Tab color
@@ -87,7 +127,7 @@ async function createSheet(token) {
         {
           addBanding: {
             bandedRange: {
-              range: { sheetId, startRowIndex: 1, endColumnIndex: 5 },
+              range: { sheetId, startRowIndex: 1, endColumnIndex: 6 },
               rowProperties: {
                 firstBandColor: { red: 1, green: 1, blue: 1 },
                 secondBandColor: { red: 0.97, green: 0.97, blue: 0.98 },
@@ -141,18 +181,19 @@ async function createSheet(token) {
             fields: 'pixelSize',
           },
         },
-        // All data cells: vertical center, clip text, font size 11
+        // All data cells: vertical center, clip text, font size 11, center aligned
         {
           repeatCell: {
-            range: { sheetId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 5 },
+            range: { sheetId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 6 },
             cell: {
               userEnteredFormat: {
                 verticalAlignment: 'MIDDLE',
                 wrapStrategy: 'CLIP',
                 textFormat: { fontSize: 11 },
+                horizontalAlignment: 'CENTER',
               },
             },
-            fields: 'userEnteredFormat(verticalAlignment,wrapStrategy,textFormat)',
+            fields: 'userEnteredFormat(verticalAlignment,wrapStrategy,textFormat,horizontalAlignment)',
           },
         },
         // Status column: center aligned
@@ -163,19 +204,42 @@ async function createSheet(token) {
             fields: 'userEnteredFormat(horizontalAlignment)',
           },
         },
-        // Date column: center aligned
+        // Last column: center aligned
         {
           repeatCell: {
-            range: { sheetId, startRowIndex: 1, startColumnIndex: 4, endColumnIndex: 5 },
+            range: { sheetId, startRowIndex: 1, startColumnIndex: 4, endColumnIndex: 6 },
             cell: { userEnteredFormat: { horizontalAlignment: 'CENTER' } },
             fields: 'userEnteredFormat(horizontalAlignment)',
           },
         },
-        // Subtle horizontal borders between rows
+        // Thick bottom border under header
         {
           updateBorders: {
-            range: { sheetId, startRowIndex: 1, endRowIndex: 1000, startColumnIndex: 0, endColumnIndex: 5 },
+            range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 6 },
+            bottom: { style: 'SOLID_MEDIUM', color: { red: 0.02, green: 0.28, blue: 0.58 } },
+          },
+        },
+        // Subtle horizontal borders between data rows
+        {
+          updateBorders: {
+            range: { sheetId, startRowIndex: 1, endRowIndex: 1000, startColumnIndex: 0, endColumnIndex: 6 },
             bottom: { style: 'SOLID', color: { red: 0.88, green: 0.88, blue: 0.90 } },
+          },
+        },
+        // Notes column: left aligned
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 1, startColumnIndex: 5, endColumnIndex: 6 },
+            cell: { userEnteredFormat: { horizontalAlignment: 'LEFT' } },
+            fields: 'userEnteredFormat(horizontalAlignment)',
+          },
+        },
+        // Bold company names
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 1, startColumnIndex: 2, endColumnIndex: 3 },
+            cell: { userEnteredFormat: { textFormat: { bold: true } } },
+            fields: 'userEnteredFormat(textFormat)',
           },
         },
       ],
@@ -191,10 +255,11 @@ async function appendRow(token, spreadsheetId, job) {
     `=HYPERLINK("${job.link}","${(job.title || '').replace(/"/g, '""')}")`,
     job.company || '',
     job.location || '',
-    job.date_posted || '',
+    [job.date_posted, job.applicants].filter(Boolean).join(' · '),
+    '',
   ];
   const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A1:append?valueInputOption=USER_ENTERED`,
     {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -360,13 +425,18 @@ async function checkGmail(token) {
         continue;
       }
       sheetUpdated = updateResult.updated;
+      if (sheetUpdated) await updateLocalJobStatus(company, status, title);
     }
     newEvents.push({ id, threadId: msg.threadId, company, title, subject, status, receivedAt: new Date().toISOString(), sheetUpdated });
   }
 
   await chrome.storage.local.set({ seenThreadStatuses: [...seenThreadStatuses] });
   if (newEvents.length) {
-    await chrome.storage.local.set({ emailEvents: [...newEvents, ...emailEvents].slice(0, 50) });
+    const { unseenEmailCount = 0 } = await chrome.storage.local.get('unseenEmailCount');
+    await chrome.storage.local.set({
+      emailEvents: [...newEvents, ...emailEvents].slice(0, 50),
+      unseenEmailCount: unseenEmailCount + newEvents.length,
+    });
   }
   if (newUnresolved.length) {
     await chrome.storage.local.set({ unresolvedEvents: [...newUnresolved, ...unresolvedEvents].slice(0, 50) });
@@ -412,7 +482,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const { jobs = [] } = await chrome.storage.local.get('jobs');
         if (!jobs.find(j => j.link === message.payload.link)) {
           await appendRow(token, spreadsheetId, message.payload);
-          jobs.unshift({ ...message.payload, savedAt: message.payload.date_saved });
+          jobs.unshift({ ...message.payload, savedAt: message.payload.date_saved, status: 'Saved' });
           await chrome.storage.local.set({ jobs });
         }
 
@@ -439,6 +509,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
         const { event, jobTitle, jobCompany } = message.payload;
         const result = await updateJobStatus(token, spreadsheetId, jobCompany, event.status, jobTitle);
+        if (result.updated) await updateLocalJobStatus(jobCompany, event.status, jobTitle);
 
         await chrome.storage.local.set({
           unresolvedEvents: unresolvedEvents.filter(e => e.id !== event.id),

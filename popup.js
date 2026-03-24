@@ -49,6 +49,8 @@ async function showMainScreen() {
   const { jobs = [], spreadsheetId, gmailEnabled, emailEvents = [], unresolvedEvents = [] } =
     await chrome.storage.local.get(['jobs', 'spreadsheetId', 'gmailEnabled', 'emailEvents', 'unresolvedEvents']);
 
+  await chrome.storage.local.set({ unseenEmailCount: 0 });
+
   const openBtn = document.getElementById('open-sheet-btn');
   if (spreadsheetId) { openBtn.disabled = false; openBtn.title = ''; }
 
@@ -77,7 +79,10 @@ function renderJobs(jobs) {
     <div class="job-card" data-link="${esc(job.link)}" style="cursor:pointer">
       <div class="job-title">${esc(job.title) || 'Untitled'}</div>
       <div class="job-meta">${esc(job.company)}${job.company && job.location ? ' · ' : ''}${esc(job.location)}</div>
-      ${job.savedAt ? `<div class="job-date">Saved ${formatDate(job.savedAt)}</div>` : ''}
+      <div class="job-footer">
+        ${job.savedAt ? `<div class="job-date">Saved ${formatDate(job.savedAt)}</div>` : '<div></div>'}
+        ${job.status ? `<span class="status-badge status-badge--${statusSlug(job.status)}">${esc(job.status)}</span>` : ''}
+      </div>
       <button class="remove-btn" data-index="${i}" title="Remove">✕</button>
     </div>
   `).join('');

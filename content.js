@@ -10,20 +10,6 @@
     return match ? match[1] : null;
   }
 
-  function parsePostedDate(text) {
-    if (!text) return '';
-    const t = text.toLowerCase();
-    const now = new Date();
-    const m = t.match(/(\d+)\s+(hour|day|week|month)/);
-    if (!m) return '';
-    const n = parseInt(m[1]);
-    const unit = m[2];
-    if (unit === 'hour')  now.setHours(now.getHours() - n);
-    if (unit === 'day')   now.setDate(now.getDate() - n);
-    if (unit === 'week')  now.setDate(now.getDate() - n * 7);
-    if (unit === 'month') now.setMonth(now.getMonth() - n);
-    return now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  }
 
   function extractJobData() {
     const jobId = getJobId();
@@ -49,13 +35,19 @@
       ? `https://www.linkedin.com/jobs/view/${jobId}/`
       : window.location.href;
 
-    const postedRaw =
-      document.querySelector('.jobs-unified-top-card__posted-date')?.innerText.trim() ||
-      document.querySelector('.tvm__text--positive')?.innerText.trim() ||
-      '';
-    const date_posted = parsePostedDate(postedRaw);
+    const tvmSpans = Array.from(
+      document.querySelectorAll('.job-details-jobs-unified-top-card__primary-description-container .tvm__text')
+    );
 
-    return { title, company, location, link, date_posted };
+    const date_posted =
+      tvmSpans.find(el => /\b(minute|hour|day|week|month)s?\b/i.test(el.innerText) && /ago|just now/i.test(el.innerText))?.innerText.trim() ||
+      document.querySelector('.jobs-unified-top-card__posted-date')?.innerText.trim() ||
+      '';
+
+    const applicants =
+      tvmSpans.find(el => /applicant|clicked apply/i.test(el.innerText))?.innerText.trim() || '';
+
+    return { title, company, location, link, date_posted, applicants };
   }
 
   // --- UI ---
