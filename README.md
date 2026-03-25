@@ -34,7 +34,7 @@ It also monitors your Gmail for application updates (rejections, interview reque
 
 ## Demo
 
-<!-- TODO: vid/gif -->
+![LinkedList demo](LinkedList%20-%20Gif.gif)
 
 ---
 
