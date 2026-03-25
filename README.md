@@ -87,7 +87,7 @@ Sign in via the popup and you're good to go.
 - Google Sheets API & Gmail API
 - Gemini 2.5 Flash via a Vercel serverless proxy
 - Upstash Redis for rate limiting
-- No build step — vanilla JS
+- vanilla JS
 
 ---
 
