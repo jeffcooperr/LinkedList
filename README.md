@@ -1,6 +1,6 @@
 # LinkedList
 
-A Chrome extension that adds a **Track** button to LinkedIn job postings and syncs everything to a Google Sheet — automatically formatted, with color-coded statuses and a dropdown for each row.
+A Chrome extension that adds a **Track** button to LinkedIn job postings and syncs everything to a pre-formatted Google Sheet.
 
 It also monitors your Gmail for application updates (rejections, interview requests, offers) and updates the sheet and extension popup accordingly.
 
@@ -40,7 +40,7 @@ It also monitors your Gmail for application updates (rejections, interview reque
 
 ## Setup
 
-> **Heads up:** This is a personal project. Running it yourself requires setting up your own Google Cloud credentials and deploying your own proxy. It's not a one-click install — but if you're comfortable with that kind of setup, it's straightforward.
+> **Heads up:** This is a personal project. Running it yourself requires setting up your own Google Cloud credentials and deploying your own proxy. It's not a one-click install but if you're comfortable with that kind of setup, it's straightforward.
 
 ### 1. Google Cloud Project
 
@@ -95,4 +95,4 @@ Sign in via the popup and you're good to go.
 
 - Gmail polling only runs while Chrome is open (MV3 service worker limitation)
 - The proxy source is in `linkedlist-proxy/`
-- If you make changes to the proxy, run `vercel --prod` again — reloading the extension won't pick them up
+- If you make changes to the proxy, run `vercel --prod` again (reloading the extension won't pick them up)
